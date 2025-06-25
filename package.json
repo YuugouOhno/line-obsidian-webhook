@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "dayjs": "^1.11.13",
+    "line-bot-sdk": "^0.1.4",
+    "simple-git": "^3.28.0"
+  },
+  "devDependencies": {
+    "serverless-dotenv-plugin": "^6.0.0"
+  }
+}

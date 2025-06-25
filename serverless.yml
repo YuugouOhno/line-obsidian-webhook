@@ -1,0 +1,50 @@
+# "org" ensures this Service is used with the correct Serverless Framework Access Key.
+org: yuugouohno
+# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
+app: line-obsidian-webhook
+# "service" is the name of this project. This will also be added to your AWS resource names.
+service: line-obsidian-webhook
+
+plugins:
+  - serverless-dotenv-plugin
+
+stages:
+  dev:
+    params:
+      GH_TOKEN: ${env:GH_TOKEN}
+      CHANNEL_SECRET: ${env:CHANNEL_SECRET}
+  prod:
+    params:
+      GH_TOKEN: ${env:GH_TOKEN_PROD}
+      CHANNEL_SECRET: ${env:CHANNEL_SECRET_PROD}
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-northeast-1
+  profile: yuugou-dev          # SSO プロファイル
+
+  environment:
+    GIT_REPO: https://github.com/YuugouOhno/obsidian-vault.git
+    GH_TOKEN: ${param:GH_TOKEN}
+    CHANNEL_SECRET: ${param:CHANNEL_SECRET}
+    TZ: Asia/Tokyo
+
+functions:
+  webhook:
+    handler: src/handler.main   # ← src 配下に移動した想定
+    memorySize: 512
+    timeout: 15
+    url: true                   # Lambda Function URL (HTTP API)
+    events:
+      - httpApi:
+          path: /webhook
+          method: post
+
+# v4 ネイティブ ESBuild 設定（任意）
+build:
+  esbuild:
+    bundle: true
+    minify: true
+    external:
+      - "@aws-sdk/*"

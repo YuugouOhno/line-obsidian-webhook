@@ -26,6 +26,11 @@ const gitUser = { name: 'LINE Bot', email: 'bot@example.com' };
 const processGitOperations = async (text: string, timestamp: number): Promise<void> => {
   console.log('Starting Git operations...');
   
+  // Add random delay to reduce concurrent conflicts
+  const delay = Math.random() * 2000; // 0-2 seconds
+  await new Promise(resolve => setTimeout(resolve, delay));
+  console.log(`Applied delay: ${delay.toFixed(0)}ms`);
+  
   const ts = dayjs(timestamp);
   const dateStr = ts.format('YYYY-MM-DD');
   const year = ts.format('YYYY');

@@ -72,16 +72,12 @@ const setupGitRepository = async (timestamp: number): Promise<{ repo: any; dirPa
   return { repo, dirPath, filePath };
 };
 
-const checkForDuplicates = async (filePath: string, line: string, messageId?: string): Promise<boolean> => {
+const checkForDuplicates = async (filePath: string, line: string): Promise<boolean> => {
   try {
     await fs.access(filePath);
     const existingContent = await fs.readFile(filePath, 'utf-8');
     
     if (existingContent.includes(line.trim())) {
-      return true;
-    }
-    
-    if (messageId && existingContent.includes(`<!-- MSG:${messageId} -->`)) {
       return true;
     }
     
@@ -96,9 +92,8 @@ const checkForDuplicates = async (filePath: string, line: string, messageId?: st
   }
 };
 
-const writeToFile = async (filePath: string, line: string, messageId?: string): Promise<void> => {
-  const finalContent = messageId ? `${line}<!-- MSG:${messageId} -->\n` : line;
-  await fs.appendFile(filePath, finalContent);
+const writeToFile = async (filePath: string, line: string): Promise<void> => {
+  await fs.appendFile(filePath, line);
 };
 
 const pushWithRetry = async (repo: any): Promise<void> => {
@@ -125,7 +120,7 @@ const pushWithRetry = async (repo: any): Promise<void> => {
   }
 };
 
-const processGitOperations = async (text: string, timestamp: number, messageId?: string): Promise<void> => {
+const processGitOperations = async (text: string, timestamp: number): Promise<void> => {
   const delay = createRandomDelay();
   await new Promise(resolve => setTimeout(resolve, delay));
   
@@ -136,12 +131,12 @@ const processGitOperations = async (text: string, timestamp: number, messageId?:
 
   const { repo, filePath } = await setupGitRepository(timestamp);
   
-  const isDuplicate = await checkForDuplicates(filePath, line, messageId);
+  const isDuplicate = await checkForDuplicates(filePath, line);
   if (isDuplicate) {
     return;
   }
   
-  await writeToFile(filePath, line, messageId);
+  await writeToFile(filePath, line);
   await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
   await pushWithRetry(repo);
 };
@@ -174,10 +169,9 @@ export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxy
     }
     
     const text = lineEvent.message.text.trim();
-    const messageId = lineEvent.message.id;
     
     // 3) Process Git operations
-    await processGitOperations(text, lineEvent.timestamp, messageId);
+    await processGitOperations(text, lineEvent.timestamp);
     
     return { statusCode: 200, body: 'Message processed successfully' };
   } catch (error: unknown) {

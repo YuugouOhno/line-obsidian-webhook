@@ -336,7 +336,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '- 14:30 複雑なメッセージ内容 - ハイフンも含む\n<!-- MSG:test-msg-123 -->\n');
+      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '- 14:30 複雑なメッセージ内容 - ハイフンも含む\n');
     });
   });
 });

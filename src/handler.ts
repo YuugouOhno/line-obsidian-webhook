@@ -26,8 +26,8 @@ const gitUser = { name: 'LINE Bot', email: 'bot@example.com' };
 const processGitOperations = async (text: string, timestamp: number): Promise<void> => {
   console.log('Starting Git operations...');
   
-  // Add random delay to reduce concurrent conflicts
-  const delay = Math.random() * 2000; // 0-2 seconds
+  // Add random delay to reduce concurrent conflicts (more aggressive)
+  const delay = Math.random() * 5000 + 1000; // 1-6 seconds
   await new Promise(resolve => setTimeout(resolve, delay));
   console.log(`Applied delay: ${delay.toFixed(0)}ms`);
   
@@ -105,19 +105,32 @@ const processGitOperations = async (text: string, timestamp: number): Promise<vo
   console.log('Starting Git commit and push...');
   await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
   
-  // Retry push with pull if conflict occurs
-  try {
-    await repo.push();
-    console.log('Git push completed successfully');
-  } catch (pushError: any) {
-    console.log('Push failed, attempting pull and retry...', pushError.message);
+  // Retry push with pull if conflict occurs (multiple attempts)
+  let pushAttempts = 0;
+  const maxAttempts = 3;
+  
+  while (pushAttempts < maxAttempts) {
     try {
-      await repo.pull();
       await repo.push();
-      console.log('Git push completed after pull');
-    } catch (retryError: any) {
-      console.error('Git push failed after retry:', retryError.message);
-      throw retryError;
+      console.log('Git push completed successfully');
+      break;
+    } catch (pushError: any) {
+      pushAttempts++;
+      console.log(`Push attempt ${pushAttempts} failed:`, pushError.message);
+      
+      if (pushAttempts >= maxAttempts) {
+        console.error('Git push failed after all retries');
+        throw pushError;
+      }
+      
+      // Wait and pull before retry
+      await new Promise(resolve => setTimeout(resolve, 1000 * pushAttempts));
+      try {
+        await repo.pull();
+        console.log(`Pulled latest changes, retrying push (attempt ${pushAttempts + 1})`);
+      } catch (pullError: any) {
+        console.log('Pull failed, but continuing with push retry:', pullError.message);
+      }
     }
   }
   console.log('Git operations completed successfully');

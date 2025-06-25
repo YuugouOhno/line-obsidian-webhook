@@ -1,4 +1,7 @@
 import { main } from '../src/handler';
+
+// Add a small delay to allow async operations to complete in tests
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import crypto from 'crypto';
 import fs from 'fs/promises';
@@ -54,6 +57,7 @@ describe('LINE Webhook Handler', () => {
     mockFs.access.mockRejectedValue(new Error('File not found'));
     mockFs.writeFile.mockResolvedValue(undefined);
     mockFs.appendFile.mockResolvedValue(undefined);
+    mockFs.readFile.mockResolvedValue('## Timeline\n');
   });
 
   const createMockEvent = (body: string, signature?: string): APIGatewayProxyEvent => {
@@ -99,6 +103,9 @@ describe('LINE Webhook Handler', () => {
       expect(result.statusCode).toBe(200);
       expect(result.body).toBe('OK');
 
+      // Wait for async operations to complete
+      await delay(50);
+
       // Verify git operations
       expect(mockGitInstance.clone).toHaveBeenCalledWith(
         'https://test-token@github.com/test/repo.git',
@@ -119,6 +126,7 @@ describe('LINE Webhook Handler', () => {
 
     test('should append to existing diary file', async () => {
       mockFs.access.mockResolvedValueOnce(undefined); // File exists
+      mockFs.readFile.mockResolvedValueOnce('## Timeline\n- 10:00 Previous message'); // Existing content
 
       const lineWebhookBody = {
         events: [{
@@ -136,6 +144,8 @@ describe('LINE Webhook Handler', () => {
 
       expect(result.statusCode).toBe(200);
       expect(mockFs.writeFile).not.toHaveBeenCalled(); // Should not create new file
+      expect(mockFs.readFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', 'utf-8');
+      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '\n'); // Add newline first
       expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 Second message\n');
     });
   });

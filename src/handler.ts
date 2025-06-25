@@ -23,6 +23,64 @@ interface LineWebhookBody {
 
 const gitUser = { name: 'LINE Bot', email: 'bot@example.com' };
 
+const processGitOperations = async (text: string, timestamp: number): Promise<void> => {
+  const ts = dayjs(timestamp);
+  const dateStr = ts.format('YYYY-MM-DD');
+  const year = ts.format('YYYY');
+  const timeStr = ts.format('HH:mm');
+  
+  // Parse time-separated entries (e.g., "13:13 content - 13:46 more content")
+  const timePattern = /(\d{1,2}:\d{2})\s+([^-]+?)(?=\s+-\s+\d{1,2}:\d{2}|$)/g;
+  const matches = [...text.matchAll(timePattern)];
+  
+  let line = '';
+  if (matches.length > 1) {
+    // Multiple time entries in one message
+    for (const match of matches) {
+      const [, time, content] = match;
+      if (time && content) {
+        line += `- ${time} ${content.trim()}\n`;
+      }
+    }
+  } else {
+    // Single entry with current timestamp
+    line = `- ${timeStr} ${text}\n`;
+  }
+
+  // Git operations
+  const repoDir = '/tmp/vault';
+  const remote = process.env.GIT_REPO!.replace(
+    'https://',
+    `https://${process.env.GH_TOKEN!}@`
+  );
+  
+  const g = git();
+  await g.clone(remote, repoDir, ['--depth', '1']);
+  const repo = git(repoDir)
+    .addConfig('user.name', gitUser.name)
+    .addConfig('user.email', gitUser.email);
+
+  const dirPath = `${repoDir}/01_diary/${year}`;
+  const filePath = `${dirPath}/${dateStr}.md`;
+  
+  // Create directory if it doesn't exist
+  await fs.mkdir(dirPath, { recursive: true });
+  
+  try {
+    await fs.access(filePath);
+    // Add a newline before new entries if file exists and has content
+    const existingContent = await fs.readFile(filePath, 'utf-8');
+    if (existingContent.trim() && !existingContent.endsWith('\n')) {
+      await fs.appendFile(filePath, '\n');
+    }
+  } catch {
+    await fs.writeFile(filePath, '## Timeline\n');
+  }
+  
+  await fs.appendFile(filePath, line);
+  await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`).push();
+};
+
 export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     // 1) Signature verify -------------------------------------------------------
@@ -51,56 +109,12 @@ export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxy
     }
     
     const text = lineEvent.message.text.trim();
-    const ts = dayjs(lineEvent.timestamp);
-    const dateStr = ts.format('YYYY-MM-DD');
-    const year = ts.format('YYYY');
-    const timeStr = ts.format('HH:mm');
     
-    // Parse time-separated entries (e.g., "13:13 content - 13:46 more content")
-    const timePattern = /(\d{1,2}:\d{2})\s+([^-]+?)(?=\s+-\s+\d{1,2}:\d{2}|$)/g;
-    const matches = [...text.matchAll(timePattern)];
-    
-    let line = '';
-    if (matches.length > 1) {
-      // Multiple time entries in one message
-      for (const match of matches) {
-        const [, time, content] = match;
-        if (time && content) {
-          line += `- ${time} ${content.trim()}\n`;
-        }
-      }
-    } else {
-      // Single entry with current timestamp
-      line = `- ${timeStr} ${text}\n`;
-    }
-
-    // 3) Git ops ---------------------------------------------------------------
-    const repoDir = '/tmp/vault';
-    const remote = process.env.GIT_REPO!.replace(
-      'https://',
-      `https://${process.env.GH_TOKEN!}@`
-    );
-    
-    const g = git();
-    await g.clone(remote, repoDir, ['--depth', '1']);
-    const repo = git(repoDir)
-      .addConfig('user.name', gitUser.name)
-      .addConfig('user.email', gitUser.email);
-
-    const dirPath = `${repoDir}/01_diary/${year}`;
-    const filePath = `${dirPath}/${dateStr}.md`;
-    
-    // Create directory if it doesn't exist
-    await fs.mkdir(dirPath, { recursive: true });
-    
-    try {
-      await fs.access(filePath);
-    } catch {
-      await fs.writeFile(filePath, '## Timeline\n');
-    }
-    
-    await fs.appendFile(filePath, line);
-    await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`).push();
+    // 3) Immediately return success to LINE to avoid timeout
+    // Process Git operations asynchronously
+    processGitOperations(text, lineEvent.timestamp).catch(error => {
+      console.error('Async Git operation failed:', error);
+    });
     
     return { statusCode: 200, body: 'OK' };
   } catch (error) {

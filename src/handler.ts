@@ -98,7 +98,23 @@ const processGitOperations = async (text: string, timestamp: number): Promise<vo
   await fs.appendFile(filePath, line);
   
   console.log('Starting Git commit and push...');
-  await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`).push();
+  await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
+  
+  // Retry push with pull if conflict occurs
+  try {
+    await repo.push();
+    console.log('Git push completed successfully');
+  } catch (pushError: any) {
+    console.log('Push failed, attempting pull and retry...', pushError.message);
+    try {
+      await repo.pull();
+      await repo.push();
+      console.log('Git push completed after pull');
+    } catch (retryError: any) {
+      console.error('Git push failed after retry:', retryError.message);
+      throw retryError;
+    }
+  }
   console.log('Git operations completed successfully');
 };
 

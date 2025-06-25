@@ -20,6 +20,7 @@ functions:
     handler: src/handler.main
     memorySize: 512
     timeout: 30
+    reservedConcurrency: 1      # Prevent concurrent execution to avoid Git conflicts
     url: true                   # Lambda Function URL (HTTP API)
     layers:
       - arn:aws:lambda:ap-northeast-1:553035198032:layer:git-lambda2:8

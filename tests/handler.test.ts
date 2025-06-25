@@ -289,14 +289,15 @@ describe('LINE Webhook Handler', () => {
       expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 Hello World\n');
     });
 
-    test('should parse multiple time entries in one message', async () => {
+    test('should handle complex message content', async () => {
       const lineWebhookBody = {
         events: [{
           type: 'message',
           timestamp: 1640995200000,
           message: {
+            id: 'test-msg-123',
             type: 'text',
-            text: '13:13 notebooklmを使いたい - 13:46 てすと、！！！',
+            text: '複雑なメッセージ内容 - ハイフンも含む',
           },
         }],
       };
@@ -305,7 +306,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 13:13 notebooklmを使いたい\n- 13:46 てすと、！！！\n');
+      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 複雑なメッセージ内容 - ハイフンも含む\n<!-- MSG:test-msg-123 -->\n');
     });
   });
 });

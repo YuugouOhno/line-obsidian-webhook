@@ -43,25 +43,9 @@ const processGitOperations = async (text: string, timestamp: number, messageId?:
   
   console.log(`Processing for date: ${dateStr}, time: ${timeStr}`);
   
-  // Parse time-separated entries (e.g., "13:13 content - 13:46 more content")
-  const timePattern = /(\d{1,2}:\d{2})\s+([^-]+?)(?=\s+-\s+\d{1,2}:\d{2}|$)/g;
-  const matches = [...text.matchAll(timePattern)];
-  
-  let line = '';
-  if (matches.length > 1) {
-    // Multiple time entries in one message
-    console.log(`Found ${matches.length} time entries`);
-    for (const match of matches) {
-      const [, time, content] = match;
-      if (time && content) {
-        line += `- ${time} ${content.trim()}\n`;
-      }
-    }
-  } else {
-    // Single entry with current timestamp
-    line = `- ${timeStr} ${text}\n`;
-    console.log('Single entry created');
-  }
+  // Create single entry with current timestamp
+  const line = `- ${timeStr} ${text}\n`;
+  console.log('Entry created');
 
   console.log('Content to write:', line);
 

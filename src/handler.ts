@@ -55,7 +55,24 @@ export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxy
     const dateStr = ts.format('YYYY-MM-DD');
     const year = ts.format('YYYY');
     const timeStr = ts.format('HH:mm');
-    const line = `- ${timeStr} ${text}\n`;
+    
+    // Parse time-separated entries (e.g., "13:13 content - 13:46 more content")
+    const timePattern = /(\d{1,2}:\d{2})\s+([^-]+?)(?=\s+-\s+\d{1,2}:\d{2}|$)/g;
+    const matches = [...text.matchAll(timePattern)];
+    
+    let line = '';
+    if (matches.length > 1) {
+      // Multiple time entries in one message
+      for (const match of matches) {
+        const [, time, content] = match;
+        if (time && content) {
+          line += `- ${time} ${content.trim()}\n`;
+        }
+      }
+    } else {
+      // Single entry with current timestamp
+      line = `- ${timeStr} ${text}\n`;
+    }
 
     // 3) Git ops ---------------------------------------------------------------
     const repoDir = '/tmp/vault';

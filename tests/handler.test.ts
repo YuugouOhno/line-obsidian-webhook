@@ -278,5 +278,24 @@ describe('LINE Webhook Handler', () => {
       expect(result.statusCode).toBe(200);
       expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 Hello World\n');
     });
+
+    test('should parse multiple time entries in one message', async () => {
+      const lineWebhookBody = {
+        events: [{
+          type: 'message',
+          timestamp: 1640995200000,
+          message: {
+            type: 'text',
+            text: '13:13 notebooklmを使いたい - 13:46 てすと、！！！',
+          },
+        }],
+      };
+
+      const event = createMockEvent(JSON.stringify(lineWebhookBody));
+      const result = await main(event);
+
+      expect(result.statusCode).toBe(200);
+      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 13:13 notebooklmを使いたい\n- 13:46 てすと、！！！\n');
+    });
   });
 });

@@ -1,70 +1,144 @@
-<!--
-title: 'AWS Simple HTTP Endpoint example in NodeJS'
-description: 'This template demonstrates how to make a simple HTTP API with Node.js running on AWS Lambda and API Gateway using the Serverless Framework.'
-layout: Doc
-framework: v4
-platform: AWS
-language: nodeJS
-authorLink: 'https://github.com/serverless'
-authorName: 'Serverless, Inc.'
-authorAvatar: 'https://avatars1.githubusercontent.com/u/13742415?s=200&v=4'
--->
+# LINE Obsidian Webhook Bot
 
-# Serverless Framework Node HTTP API on AWS
+LINEメッセージを自動でObsidian vaultに保存するサーバーレスWebhookボットです。TypeScriptで書かれ、AWS Lambdaで動作します。
 
-This template demonstrates how to make a simple HTTP API with Node.js running on AWS Lambda and API Gateway using the Serverless Framework.
+## 概要
 
-This template does not include any kind of persistence (database). For more advanced examples, check out the [serverless/examples repository](https://github.com/serverless/examples/) which includes Typescript, Mongo, DynamoDB and other examples.
+LINEでメッセージを送信すると、自動的にObsidian vaultのGitリポジトリに日記形式で記録されます。
 
-## Usage
+### 主な機能
 
-### Deployment
+- ✅ LINEメッセージの自動受信・処理
+- ✅ Obsidian vault への自動コミット
+- ✅ 日付別ファイル管理 (`01_diary/2025/2025-06-25.md`)
+- ✅ タイムライン形式でのメッセージ記録
+- ✅ TypeScript による型安全性
+- ✅ 包括的なテストカバレッジ
 
-In order to deploy the example, you need to run the following command:
+## アーキテクチャ
 
 ```
-serverless deploy
+LINE メッセージ → AWS Lambda → GitHub Repository → Obsidian 自動同期
 ```
 
-After running deploy, you should see output similar to:
+## 必要な設定
 
-```
-Deploying "serverless-http-api" to stage "dev" (us-east-1)
+### 1. 環境変数
 
-✔ Service deployed to stack serverless-http-api-dev (91s)
+`.env` ファイルを作成し、以下を設定：
 
-endpoint: GET - https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/
-functions:
-  hello: serverless-http-api-dev-hello (1.6 kB)
-```
-
-_Note_: In current form, after deployment, your API is public and can be invoked by anyone. For production deployments, you might want to configure an authorizer. For details on how to do that, refer to [HTTP API (API Gateway V2) event docs](https://www.serverless.com/framework/docs/providers/aws/events/http-api).
-
-### Invocation
-
-After successful deployment, you can call the created application via HTTP:
-
-```
-curl https://xxxxxxx.execute-api.us-east-1.amazonaws.com/
+```bash
+GH_TOKEN=your_github_personal_access_token
+CHANNEL_SECRET=your_line_channel_secret
 ```
 
-Which should result in response similar to:
+### 2. LINE Bot 設定
 
-```json
-{ "message": "Go Serverless v4! Your function executed successfully!" }
+1. [LINE Developers Console](https://developers.line.biz/) でチャネル作成
+2. Channel Secret を取得
+3. デプロイ後に生成されるWebhook URLを設定
+
+### 3. GitHub リポジトリ
+
+- Obsidian vault が Git リポジトリとして設定済み
+- Personal Access Token の作成（repo権限必要）
+
+## 開発・デプロイ
+
+### 依存関係のインストール
+
+```bash
+npm install
 ```
 
-### Local development
+### TypeScript
 
-The easiest way to develop and test your function is to use the `dev` command:
+```bash
+npm run typecheck    # 型チェック
+npm run build        # TypeScriptコンパイル
+```
+
+### テスト
+
+```bash
+npm test             # テスト実行
+npm run test:watch   # テスト監視モード
+npm run test:coverage # カバレッジレポート
+```
+
+### ローカル開発
+
+```bash
+npm run dev          # ローカルエミュレーター起動
+```
+
+### デプロイ
+
+```bash
+npm run deploy       # 開発環境へデプロイ
+npm run deploy:prod  # 本番環境へデプロイ
+```
+
+## ファイル構造
 
 ```
-serverless dev
+line-obsidian-webhook/
+├── src/
+│   └── handler.ts          # メインLambda関数
+├── tests/
+│   └── handler.test.ts     # テストファイル
+├── serverless.yml          # Serverlessフレームワーク設定
+├── tsconfig.json          # TypeScript設定
+├── jest.config.js         # Jest設定
+└── CLAUDE.md             # 開発ガイド
 ```
 
-This will start a local emulator of AWS Lambda and tunnel your requests to and from AWS Lambda, allowing you to interact with your function as if it were running in the cloud.
+## 動作フロー
 
-Now you can invoke the function as before, but this time the function will be executed locally. Now you can develop your function locally, invoke it, and see the results immediately without having to re-deploy.
+1. **LINEメッセージ送信** → LINE Platform がWebhookを呼び出し
+2. **署名検証** → LINE Channel Secret で署名を検証
+3. **メッセージ処理** → テキストメッセージのみを処理
+4. **Git操作** → リポジトリをクローン、ファイル作成/追記、コミット・プッシュ
+5. **Obsidian同期** → Git同期プラグインで自動更新
 
-When you are done developing, don't forget to run `serverless deploy` to deploy the function to the cloud.
-# line-obsidian-webhook
+## 出力形式
+
+メッセージは以下の形式で保存されます：
+
+```markdown
+## Timeline
+- 14:30 Hello World
+- 15:45 今日は良い天気です
+```
+
+ファイルパス：`01_diary/2025/2025-06-25.md`
+
+## トラブルシューティング
+
+### CloudWatch Logs確認
+
+```bash
+aws logs get-log-events \
+  --log-group-name "/aws/lambda/line-obsidian-webhook-dev-webhook" \
+  --log-stream-name "最新のログストリーム名" \
+  --profile your-aws-profile
+```
+
+### よくある問題
+
+- **Git not found エラー**: Lambda Layer でGitが追加されているか確認
+- **署名検証失敗**: CHANNEL_SECRET が正しく設定されているか確認
+- **リポジトリアクセス失敗**: GH_TOKEN の権限を確認
+
+## ライセンス
+
+MIT License
+
+## 技術スタック
+
+- **Runtime**: Node.js 20.x
+- **Language**: TypeScript
+- **Testing**: Jest
+- **Deployment**: Serverless Framework
+- **Cloud**: AWS Lambda + Function URL
+- **Git**: simple-git library

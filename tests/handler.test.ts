@@ -101,7 +101,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(result.body).toBe('OK');
+      expect(result.body).toBe('Message processed successfully');
 
       // Wait for async operations to complete
       await delay(50);
@@ -109,17 +109,17 @@ describe('LINE Webhook Handler', () => {
       // Verify git operations
       expect(mockGitInstance.clone).toHaveBeenCalledWith(
         'https://test-token@github.com/test/repo.git',
-        '/tmp/vault',
+        expect.stringMatching(/^\/tmp\/vault-\d+$/),
         ['--depth', '1']
       );
 
       // Verify file operations
-      expect(mockFs.mkdir).toHaveBeenCalledWith('/tmp/vault/01_diary/2025', { recursive: true });
-      expect(mockFs.writeFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '## Timeline\n');
-      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 Hello World\n');
+      expect(mockFs.mkdir).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025$/), { recursive: true });
+      expect(mockFs.writeFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '## Timeline\n');
+      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '- 14:30 Hello World\n');
 
       // Verify git commit
-      expect(mockRepo.add).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md');
+      expect(mockRepo.add).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/));
       expect(mockRepo.commit).toHaveBeenCalledWith('LINE 2025-06-25 14:30');
       expect(mockRepo.push).toHaveBeenCalled();
     });
@@ -144,10 +144,10 @@ describe('LINE Webhook Handler', () => {
 
       expect(result.statusCode).toBe(200);
       expect(mockFs.writeFile).not.toHaveBeenCalled(); // Should not create new file
-      expect(mockFs.readFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', 'utf-8');
-      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '\n'); // Add newline first
-      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 Second message\n');
-    });
+      expect(mockFs.readFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), 'utf-8');
+      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '\n'); // Add newline first
+      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '- 14:30 Second message\n');
+    }, 10000);
   });
 
   describe('Error Cases', () => {
@@ -158,7 +158,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(401);
-      expect(result.body).toBe('Bad Signature');
+      expect(result.body).toBe('Invalid signature');
     });
 
     test('should reject missing signature', async () => {
@@ -168,7 +168,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(400);
-      expect(result.body).toBe('Missing signature or body');
+      expect(result.body).toBe('Missing required headers or body');
     });
 
     test('should reject missing body', async () => {
@@ -178,7 +178,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(400);
-      expect(result.body).toBe('Missing signature or body');
+      expect(result.body).toBe('Missing required headers or body');
     });
 
     test('should ignore non-text messages', async () => {
@@ -196,7 +196,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(result.body).toBe('Ignore non-text');
+      expect(result.body).toBe('Event ignored - not a text message');
       expect(mockGitInstance.clone).not.toHaveBeenCalled();
     });
 
@@ -212,7 +212,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(result.body).toBe('Ignore non-text');
+      expect(result.body).toBe('Event ignored - not a text message');
       expect(mockGitInstance.clone).not.toHaveBeenCalled();
     });
 
@@ -234,7 +234,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(500);
-      expect(result.body).toBe('Internal Server Error');
+      expect(result.body).toBe('Failed to process webhook');
     });
 
     test('should handle file system errors', async () => {
@@ -255,8 +255,8 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(500);
-      expect(result.body).toBe('Internal Server Error');
-    });
+      expect(result.body).toBe('Failed to process webhook');
+    }, 10000);
   });
 
   describe('Edge Cases', () => {
@@ -267,10 +267,40 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(result.body).toBe('Ignore non-text');
+      expect(result.body).toBe('Event ignored - not a text message');
     });
 
     test('should handle messages with leading/trailing whitespace', async () => {
+      // Reset all mocks to ensure clean state
+      jest.clearAllMocks();
+      
+      // Set up git mocks properly
+      const mockGitInstanceLocal = {
+        clone: jest.fn().mockResolvedValue(undefined),
+      };
+      
+      const mockRepoLocal = {
+        addConfig: jest.fn().mockReturnThis(),
+        add: jest.fn().mockReturnThis(),
+        commit: jest.fn().mockReturnThis(),
+        push: jest.fn().mockResolvedValue(undefined),
+      };
+      
+      mockGit.mockReturnValueOnce(mockGitInstanceLocal as any);
+      mockGit.mockReturnValueOnce(mockRepoLocal as any);
+      
+      // Set up fs mocks
+      mockFs.mkdir.mockResolvedValue(undefined);
+      mockFs.access.mockRejectedValue(new Error('File not found'));
+      mockFs.writeFile.mockResolvedValue(undefined);
+      mockFs.appendFile.mockResolvedValue(undefined);
+
+      // Ensure environment variables are set
+      process.env.CHANNEL_SECRET = 'test-channel-secret';
+      process.env.GIT_REPO = 'https://github.com/test/repo.git';
+      process.env.GH_TOKEN = 'test-token';
+      process.env.TZ = 'Asia/Tokyo';
+
       const lineWebhookBody = {
         events: [{
           type: 'message',
@@ -286,8 +316,8 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 Hello World\n');
-    });
+      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '- 14:30 Hello World\n');
+    }, 10000);
 
     test('should handle complex message content', async () => {
       const lineWebhookBody = {
@@ -306,7 +336,7 @@ describe('LINE Webhook Handler', () => {
       const result = await main(event);
 
       expect(result.statusCode).toBe(200);
-      expect(mockFs.appendFile).toHaveBeenCalledWith('/tmp/vault/01_diary/2025/2025-06-25.md', '- 14:30 複雑なメッセージ内容 - ハイフンも含む\n<!-- MSG:test-msg-123 -->\n');
+      expect(mockFs.appendFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/vault-\d+\/01_diary\/2025\/2025-06-25\.md$/), '- 14:30 複雑なメッセージ内容 - ハイフンも含む\n<!-- MSG:test-msg-123 -->\n');
     });
   });
 });

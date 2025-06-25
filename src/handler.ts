@@ -8,6 +8,12 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 dayjs.extend(timezone);
 dayjs.tz.setDefault(process.env.TZ);
 
+interface LineMessage {
+  id: string;
+  type: string;
+  text: string;
+}
+
 interface LineEvent {
   type: string;
   timestamp: number;
@@ -15,138 +21,139 @@ interface LineEvent {
   source?: {
     userId?: string;
   };
-  message?: {
-    id: string;
-    type: string;
-    text: string;
-  };
+  message?: LineMessage;
 }
 
 interface LineWebhookBody {
   events: LineEvent[];
 }
 
+type GitOperationError = Error & {
+  code?: string;
+};
+
+interface ProcessingResult {
+  success: boolean;
+  message: string;
+}
+
 const gitUser = { name: 'LINE Bot', email: 'bot@example.com' };
 
-const processGitOperations = async (text: string, timestamp: number, messageId?: string): Promise<void> => {
-  console.log('Starting Git operations...');
-  
-  // Add random delay to reduce concurrent conflicts (more aggressive)
-  const delay = Math.random() * 5000 + 1000; // 1-6 seconds
-  await new Promise(resolve => setTimeout(resolve, delay));
-  console.log(`Applied delay: ${delay.toFixed(0)}ms`);
-  
-  const ts = dayjs(timestamp);
-  const dateStr = ts.format('YYYY-MM-DD');
-  const year = ts.format('YYYY');
-  const timeStr = ts.format('HH:mm');
-  
-  console.log(`Processing for date: ${dateStr}, time: ${timeStr}`);
-  
-  // Create single entry with current timestamp
-  const line = `- ${timeStr} ${text}\n`;
-  console.log('Entry created');
+const RETRY_DELAY_MS = 1000;
+const MAX_PUSH_ATTEMPTS = 3;
+const MIN_DELAY_MS = 1000;
+const MAX_DELAY_MS = 6000;
 
-  console.log('Content to write:', line);
+const createRandomDelay = () => Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS) + MIN_DELAY_MS;
 
-  // Git operations
+const setupGitRepository = async (timestamp: number): Promise<{ repo: any; dirPath: string; filePath: string }> => {
   const repoDir = `/tmp/vault-${Date.now()}`;
   const remote = process.env.GIT_REPO!.replace(
     'https://',
     `https://${process.env.GH_TOKEN!}@`
   );
   
-  console.log('Starting Git clone...');
   const g = git();
   await g.clone(remote, repoDir, ['--depth', '1']);
-  console.log('Git clone completed');
   
   const repo = git(repoDir)
     .addConfig('user.name', gitUser.name)
     .addConfig('user.email', gitUser.email);
 
+  const ts = dayjs(timestamp);
+  const year = ts.format('YYYY');
+  const dateStr = ts.format('YYYY-MM-DD');
+  
   const dirPath = `${repoDir}/01_diary/${year}`;
   const filePath = `${dirPath}/${dateStr}.md`;
   
-  console.log(`Target file: ${filePath}`);
-  
-  // Create directory if it doesn't exist
   await fs.mkdir(dirPath, { recursive: true });
-  console.log('Directory created/verified');
   
+  return { repo, dirPath, filePath };
+};
+
+const checkForDuplicates = async (filePath: string, line: string, messageId?: string): Promise<boolean> => {
   try {
     await fs.access(filePath);
-    console.log('File exists, reading content...');
-    // Check for duplicate entries before adding
     const existingContent = await fs.readFile(filePath, 'utf-8');
     
-    // Check for duplicate entries (by content or message ID)
     if (existingContent.includes(line.trim())) {
-      console.log('Duplicate entry detected by content, skipping:', line.trim());
-      return; // Skip duplicate
+      return true;
     }
     
     if (messageId && existingContent.includes(`<!-- MSG:${messageId} -->`)) {
-      console.log('Duplicate entry detected by message ID, skipping:', messageId);
-      return; // Skip duplicate
+      return true;
     }
     
     if (existingContent.trim() && !existingContent.endsWith('\n')) {
       await fs.appendFile(filePath, '\n');
-      console.log('Added newline to existing file');
     }
+    
+    return false;
   } catch {
-    console.log('File does not exist, creating new file...');
     await fs.writeFile(filePath, '## Timeline\n');
+    return false;
   }
-  
-  console.log('Appending content to file...');
-  // Add message ID as hidden comment for duplicate detection
+};
+
+const writeToFile = async (filePath: string, line: string, messageId?: string): Promise<void> => {
   const finalContent = messageId ? `${line}<!-- MSG:${messageId} -->\n` : line;
   await fs.appendFile(filePath, finalContent);
-  
-  console.log('Starting Git commit and push...');
-  await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
-  
-  // Retry push with pull if conflict occurs (multiple attempts)
+};
+
+const pushWithRetry = async (repo: any): Promise<void> => {
   let pushAttempts = 0;
-  const maxAttempts = 3;
   
-  while (pushAttempts < maxAttempts) {
+  while (pushAttempts < MAX_PUSH_ATTEMPTS) {
     try {
       await repo.push();
-      console.log('Git push completed successfully');
       break;
     } catch (pushError: any) {
       pushAttempts++;
-      console.log(`Push attempt ${pushAttempts} failed:`, pushError.message);
       
-      if (pushAttempts >= maxAttempts) {
-        console.error('Git push failed after all retries');
+      if (pushAttempts >= MAX_PUSH_ATTEMPTS) {
         throw pushError;
       }
       
-      // Wait and pull before retry
-      await new Promise(resolve => setTimeout(resolve, 1000 * pushAttempts));
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * pushAttempts));
       try {
         await repo.pull();
-        console.log(`Pulled latest changes, retrying push (attempt ${pushAttempts + 1})`);
       } catch (pullError: any) {
-        console.log('Pull failed, but continuing with push retry:', pullError.message);
+        // Continue with push retry even if pull fails
       }
     }
   }
-  console.log('Git operations completed successfully');
+};
+
+const processGitOperations = async (text: string, timestamp: number, messageId?: string): Promise<void> => {
+  const delay = createRandomDelay();
+  await new Promise(resolve => setTimeout(resolve, delay));
+  
+  const ts = dayjs(timestamp);
+  const dateStr = ts.format('YYYY-MM-DD');
+  const timeStr = ts.format('HH:mm');
+  const line = `- ${timeStr} ${text}\n`;
+
+  const { repo, filePath } = await setupGitRepository(timestamp);
+  
+  const isDuplicate = await checkForDuplicates(filePath, line, messageId);
+  if (isDuplicate) {
+    return;
+  }
+  
+  await writeToFile(filePath, line, messageId);
+  await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
+  await pushWithRetry(repo);
 };
 
 export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
-    // 1) Signature verify -------------------------------------------------------
+    // 1) Signature verification
     const signature = event.headers['x-line-signature'];
     const body = event.body;
     
     if (!signature || !body) {
-      return { statusCode: 400, body: 'Missing signature or body' };
+      return { statusCode: 400, body: 'Missing required headers or body' };
     }
 
     const hash = crypto
@@ -155,27 +162,27 @@ export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxy
       .digest('base64');
     
     if (hash !== signature) {
-      return { statusCode: 401, body: 'Bad Signature' };
+      return { statusCode: 401, body: 'Invalid signature' };
     }
 
-    // 2) Parse LINE event -------------------------------------------------------
+    // 2) Parse and validate LINE event
     const webhookBody: LineWebhookBody = JSON.parse(body);
     const lineEvent = webhookBody.events[0];
     
     if (!lineEvent || lineEvent.type !== 'message' || lineEvent.message?.type !== 'text') {
-      return { statusCode: 200, body: 'Ignore non-text' };
+      return { statusCode: 200, body: 'Event ignored - not a text message' };
     }
     
     const text = lineEvent.message.text.trim();
     const messageId = lineEvent.message.id;
     
-    // 3) Process Git operations synchronously for now to ensure execution
-    console.log('Processing message:', text, 'ID:', messageId);
+    // 3) Process Git operations
     await processGitOperations(text, lineEvent.timestamp, messageId);
     
-    return { statusCode: 200, body: 'OK' };
-  } catch (error) {
-    console.error('Error processing LINE webhook:', error);
-    return { statusCode: 500, body: 'Internal Server Error' };
+    return { statusCode: 200, body: 'Message processed successfully' };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('LINE webhook processing failed:', errorMessage);
+    return { statusCode: 500, body: 'Failed to process webhook' };
   }
 };

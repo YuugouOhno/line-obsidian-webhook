@@ -11,7 +11,12 @@ dayjs.tz.setDefault(process.env.TZ);
 interface LineEvent {
   type: string;
   timestamp: number;
+  replyToken?: string;
+  source?: {
+    userId?: string;
+  };
   message?: {
+    id: string;
     type: string;
     text: string;
   };
@@ -23,7 +28,7 @@ interface LineWebhookBody {
 
 const gitUser = { name: 'LINE Bot', email: 'bot@example.com' };
 
-const processGitOperations = async (text: string, timestamp: number): Promise<void> => {
+const processGitOperations = async (text: string, timestamp: number, messageId?: string): Promise<void> => {
   console.log('Starting Git operations...');
   
   // Add random delay to reduce concurrent conflicts (more aggressive)
@@ -88,8 +93,20 @@ const processGitOperations = async (text: string, timestamp: number): Promise<vo
   try {
     await fs.access(filePath);
     console.log('File exists, reading content...');
-    // Add a newline before new entries if file exists and has content
+    // Check for duplicate entries before adding
     const existingContent = await fs.readFile(filePath, 'utf-8');
+    
+    // Check for duplicate entries (by content or message ID)
+    if (existingContent.includes(line.trim())) {
+      console.log('Duplicate entry detected by content, skipping:', line.trim());
+      return; // Skip duplicate
+    }
+    
+    if (messageId && existingContent.includes(`<!-- MSG:${messageId} -->`)) {
+      console.log('Duplicate entry detected by message ID, skipping:', messageId);
+      return; // Skip duplicate
+    }
+    
     if (existingContent.trim() && !existingContent.endsWith('\n')) {
       await fs.appendFile(filePath, '\n');
       console.log('Added newline to existing file');
@@ -100,7 +117,9 @@ const processGitOperations = async (text: string, timestamp: number): Promise<vo
   }
   
   console.log('Appending content to file...');
-  await fs.appendFile(filePath, line);
+  // Add message ID as hidden comment for duplicate detection
+  const finalContent = messageId ? `${line}<!-- MSG:${messageId} -->\n` : line;
+  await fs.appendFile(filePath, finalContent);
   
   console.log('Starting Git commit and push...');
   await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
@@ -164,10 +183,11 @@ export const main = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxy
     }
     
     const text = lineEvent.message.text.trim();
+    const messageId = lineEvent.message.id;
     
     // 3) Process Git operations synchronously for now to ensure execution
-    console.log('Processing message:', text);
-    await processGitOperations(text, lineEvent.timestamp);
+    console.log('Processing message:', text, 'ID:', messageId);
+    await processGitOperations(text, lineEvent.timestamp, messageId);
     
     return { statusCode: 200, body: 'OK' };
   } catch (error) {

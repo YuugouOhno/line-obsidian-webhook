@@ -1,10 +1,26 @@
 {
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "dev": "serverless dev",
+    "deploy": "serverless deploy --aws-profile yuugou-dev",
+    "deploy:prod": "serverless deploy --stage prod --aws-profile yuugou-dev"
+  },
   "dependencies": {
     "dayjs": "^1.11.13",
     "line-bot-sdk": "^0.1.4",
     "simple-git": "^3.28.0"
   },
   "devDependencies": {
-    "serverless-dotenv-plugin": "^6.0.0"
+    "@types/aws-lambda": "^8.10.150",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.4",
+    "jest": "^30.0.3",
+    "serverless-dotenv-plugin": "^6.0.0",
+    "ts-jest": "^29.4.0",
+    "typescript": "^5.8.3"
   }
 }

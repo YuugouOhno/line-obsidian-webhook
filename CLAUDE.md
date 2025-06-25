@@ -21,18 +21,29 @@ This is a LINE webhook bot that integrates with Obsidian to automatically create
 
 ## Development Commands
 
+### TypeScript
+```bash
+npm run typecheck    # Type checking without build
+npm run build        # Compile TypeScript to JavaScript
+```
+
+### Testing
+```bash
+npm test             # Run all tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage report
+```
+
 ### Local Development
 ```bash
-serverless dev
+npm run dev          # Start local emulator with hot reloading
 ```
-Starts local emulator with hot reloading for development.
 
 ### Deployment
 ```bash
-serverless deploy
-serverless deploy --stage prod
+npm run deploy       # Deploy to dev stage
+npm run deploy:prod  # Deploy to production stage
 ```
-Deploy to AWS Lambda. Defaults to `dev` stage.
 
 ### Environment Setup
 Required environment variables in `.env`:

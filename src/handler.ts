@@ -56,7 +56,7 @@ const processGitOperations = async (text: string, timestamp: number): Promise<vo
   console.log('Content to write:', line);
 
   // Git operations
-  const repoDir = '/tmp/vault';
+  const repoDir = `/tmp/vault-${Date.now()}`;
   const remote = process.env.GIT_REPO!.replace(
     'https://',
     `https://${process.env.GH_TOKEN!}@`

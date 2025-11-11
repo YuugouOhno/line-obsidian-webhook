@@ -52,48 +52,55 @@ const setupGitRepository = async (timestamp: number): Promise<{ repo: any; dirPa
     'https://',
     `https://${process.env.GH_TOKEN!}@`
   );
-  
+
   const g = git();
   await g.clone(remote, repoDir, ['--depth', '1']);
-  
+
   const repo = git(repoDir)
     .addConfig('user.name', gitUser.name)
     .addConfig('user.email', gitUser.email);
 
-  const ts = dayjs(timestamp);
-  const year = ts.format('YYYY');
-  const dateStr = ts.format('YYYY-MM-DD');
-  
-  const dirPath = `${repoDir}/01_diary/${year}`;
-  const filePath = `${dirPath}/${dateStr}.md`;
-  
+  const dirPath = `${repoDir}/02_notes/projects`;
+  const filePath = `${dirPath}/project_LINE.md`;
+
   await fs.mkdir(dirPath, { recursive: true });
-  
+
   return { repo, dirPath, filePath };
 };
 
-const checkForDuplicates = async (filePath: string, line: string): Promise<boolean> => {
+const writeMessageToFile = async (filePath: string, text: string, dateStr: string): Promise<boolean> => {
+  const line = `- ${text}`;
+
   try {
     await fs.access(filePath);
     const existingContent = await fs.readFile(filePath, 'utf-8');
-    
-    if (existingContent.includes(line.trim())) {
-      return true;
-    }
-    
-    if (existingContent.trim() && !existingContent.endsWith('\n')) {
-      await fs.appendFile(filePath, '\n');
-    }
-    
-    return false;
-  } catch {
-    await fs.writeFile(filePath, '## Timeline\n');
-    return false;
-  }
-};
 
-const writeToFile = async (filePath: string, line: string): Promise<void> => {
-  await fs.appendFile(filePath, line);
+    // Check for duplicates
+    if (existingContent.includes(line)) {
+      return true; // isDuplicate
+    }
+
+    // Check if today's date exists in the file
+    const lines = existingContent.split('\n');
+    const dateIndex = lines.findIndex(l => l.trim() === dateStr);
+
+    let newContent: string;
+    if (dateIndex !== -1) {
+      // Date found: insert right after the date
+      lines.splice(dateIndex + 1, 0, line);
+      newContent = lines.join('\n');
+    } else {
+      // Date not found: prepend to the beginning of the file
+      newContent = `${dateStr}\n${line}\n\n${existingContent}`;
+    }
+
+    await fs.writeFile(filePath, newContent);
+    return false; // not duplicate
+  } catch {
+    // File doesn't exist: create new file
+    await fs.writeFile(filePath, `${dateStr}\n${line}\n`);
+    return false; // not duplicate
+  }
 };
 
 const pushWithRetry = async (repo: any): Promise<void> => {
@@ -123,21 +130,18 @@ const pushWithRetry = async (repo: any): Promise<void> => {
 const processGitOperations = async (text: string, timestamp: number): Promise<void> => {
   const delay = createRandomDelay();
   await new Promise(resolve => setTimeout(resolve, delay));
-  
+
   const ts = dayjs(timestamp);
   const dateStr = ts.format('YYYY-MM-DD');
-  const timeStr = ts.format('HH:mm');
-  const line = `- ${timeStr} ${text}\n`;
 
   const { repo, filePath } = await setupGitRepository(timestamp);
-  
-  const isDuplicate = await checkForDuplicates(filePath, line);
+
+  const isDuplicate = await writeMessageToFile(filePath, text, dateStr);
   if (isDuplicate) {
     return;
   }
-  
-  await writeToFile(filePath, line);
-  await repo.add(filePath).commit(`LINE ${dateStr} ${timeStr}`);
+
+  await repo.add(filePath).commit(`LINE ${dateStr}`);
   await pushWithRetry(repo);
 };
 
